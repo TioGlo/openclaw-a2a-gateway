@@ -22,8 +22,27 @@ export interface OpenClawDispatchEvent {
   message: unknown;
 }
 
+export interface OpenClawConfig {
+  gateway?: {
+    port?: number;
+    auth?: {
+      token?: string;
+      password?: string;
+    };
+    tls?: {
+      enabled?: boolean;
+    };
+  };
+  hooks?: {
+    token?: string;
+  };
+  [key: string]: unknown;
+}
+
 export interface OpenClawPluginApi {
+  config?: OpenClawConfig;
   pluginConfig: unknown;
+  runtime?: unknown;
   logger: Logger;
   on(
     hookName: string,
