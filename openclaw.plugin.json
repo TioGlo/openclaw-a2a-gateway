@@ -1,0 +1,99 @@
+{
+  "id": "a2a-gateway",
+  "name": "A2A Gateway",
+  "description": "OpenClaw A2A v0.3.0 gateway with Agent Card, JSON-RPC, and REST endpoints",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "agentCard": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "url": { "type": "string" },
+          "skills": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string" }
+                  },
+                  "required": ["name"]
+                }
+              ]
+            }
+          }
+        },
+        "required": ["name", "skills"]
+      },
+      "server": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string", "default": "0.0.0.0" },
+          "port": { "type": "number", "default": 18800 }
+        }
+      },
+      "peers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "agentCardUrl": { "type": "string" },
+            "auth": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["bearer", "apiKey"]
+                },
+                "token": { "type": "string" }
+              },
+              "required": ["type", "token"]
+            }
+          },
+          "required": ["name", "agentCardUrl"]
+        }
+      },
+      "security": {
+        "type": "object",
+        "properties": {
+          "inboundAuth": {
+            "type": "string",
+            "enum": ["none", "bearer"],
+            "default": "none"
+          },
+          "token": { "type": "string" }
+        }
+      },
+      "routing": {
+        "type": "object",
+        "properties": {
+          "defaultAgentId": {
+            "type": "string",
+            "default": "default"
+          }
+        }
+      }
+    },
+    "required": ["agentCard"]
+  },
+  "uiHints": {
+    "peers": {
+      "items": {
+        "auth": {
+          "token": { "sensitive": true }
+        }
+      }
+    },
+    "security": {
+      "token": { "sensitive": true }
+    }
+  }
+}
