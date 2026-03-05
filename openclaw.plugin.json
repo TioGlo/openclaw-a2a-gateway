@@ -5,9 +5,11 @@
   "version": "1.0.0",
   "configSchema": {
     "type": "object",
+    "additionalProperties": false,
     "properties": {
       "agentCard": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "name": { "type": "string" },
           "description": { "type": "string" },
@@ -34,6 +36,7 @@
       },
       "server": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "host": { "type": "string", "default": "0.0.0.0" },
           "port": { "type": "number", "default": 18800 }
@@ -43,11 +46,13 @@
         "type": "array",
         "items": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
             "agentCardUrl": { "type": "string" },
             "auth": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "type": {
                   "type": "string",
@@ -63,6 +68,7 @@
       },
       "security": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "inboundAuth": {
             "type": "string",
@@ -74,6 +80,7 @@
       },
       "routing": {
         "type": "object",
+        "additionalProperties": false,
         "properties": {
           "defaultAgentId": {
             "type": "string",

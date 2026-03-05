@@ -254,8 +254,7 @@ const plugin = {
 
     api.registerService({
       id: "a2a-gateway",
-      __app: app,
-      async start() {
+      async start(_ctx) {
         if (server) {
           return;
         }
@@ -326,7 +325,7 @@ const plugin = {
           grpcServer = null;
         }
       },
-      async stop() {
+      async stop(_ctx) {
         // Stop gRPC server
         if (grpcServer) {
           grpcServer.forceShutdown();

@@ -2,71 +2,16 @@
  * A2A Gateway Plugin — Standard types
  *
  * These types support the A2A v0.3.0 protocol integration via @a2a-js/sdk.
- * For gateway-internal (non-standard) types, see ./internal/types-internal.ts.
  */
 
 // ---------------------------------------------------------------------------
 // OpenClaw plugin API types
 // ---------------------------------------------------------------------------
 
-export interface Logger {
-  info(message: string): void;
-  warn(message: string): void;
-  error(message: string): void;
-}
-
-export interface OpenClawDispatchEvent {
-  type: string;
-  taskId: string;
-  contextId?: string;
-  message: unknown;
-}
-
-export interface OpenClawConfig {
-  gateway?: {
-    port?: number;
-    auth?: {
-      token?: string;
-      password?: string;
-    };
-    tls?: {
-      enabled?: boolean;
-    };
-  };
-  hooks?: {
-    token?: string;
-  };
-  [key: string]: unknown;
-}
-
-export interface OpenClawPluginApi {
-  config?: OpenClawConfig;
-  pluginConfig: unknown;
-  runtime?: unknown;
-  logger: Logger;
-  on(
-    hookName: string,
-    handler: (event: Record<string, unknown>, ctx?: unknown) => unknown,
-    options?: { priority?: number }
-  ): void;
-  registerGatewayMethod(
-    name: string,
-    handler: (args: {
-      params?: Record<string, unknown>;
-      respond: (ok: boolean, data: unknown) => void;
-    }) => void
-  ): void;
-  registerService?(service: {
-    id: string;
-    start: () => void | Promise<void>;
-    stop: () => void | Promise<void>;
-    [key: string]: unknown;
-  }): void;
-  dispatchToAgent?(
-    agentId: string,
-    event: OpenClawDispatchEvent
-  ): Promise<{ accepted: boolean; response?: string; error?: string }>;
-}
+// Use the official OpenClaw plugin SDK types.
+// IMPORTANT: keep these as type-only exports so the plugin has no runtime
+// dependency on OpenClaw as an npm package.
+export type { OpenClawPluginApi, PluginLogger, OpenClawConfig } from "openclaw/plugin-sdk";
 
 // ---------------------------------------------------------------------------
 // A2A peer / auth configuration

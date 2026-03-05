@@ -435,7 +435,7 @@ class GatewayRpcConnection {
 /**
  * Bridges A2A inbound messages to OpenClaw agent dispatch.
  *
- * - Dispatches to an OpenClaw agent via gateway RPC (preferred) or `api.dispatchToAgent`
+ * - Dispatches to an OpenClaw agent via Gateway RPC (agent server method)
  * - On success: publishes a complete Task with "completed" state and artifacts
  * - On dispatch failure: keeps legacy fallback text and attempts `/hooks/wake`
  */
@@ -471,12 +471,7 @@ export class OpenClawAgentExecutor implements AgentExecutor {
     let responseText = FALLBACK_RESPONSE_TEXT;
 
     try {
-      responseText = await this.dispatchPreferredThenLegacy(
-        agentId,
-        taskId,
-        contextId,
-        requestContext.userMessage,
-      );
+      responseText = await this.dispatchViaGatewayRpc(agentId, requestContext.userMessage);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.api.logger.warn(`a2a-gateway: agent dispatch failed (${errorMessage}); using fallback`);
@@ -538,26 +533,6 @@ export class OpenClawAgentExecutor implements AgentExecutor {
     eventBus.finished();
   }
 
-  private async dispatchPreferredThenLegacy(
-    agentId: string,
-    taskId: string,
-    contextId: string,
-    userMessage: unknown,
-  ): Promise<string> {
-    try {
-      return await this.dispatchViaGatewayRpc(agentId, userMessage);
-    } catch (preferredError: unknown) {
-      const preferredMessage = preferredError instanceof Error ? preferredError.message : String(preferredError);
-      if (!this.api.dispatchToAgent) {
-        throw preferredError;
-      }
-
-      this.api.logger.warn(
-        `a2a-gateway: preferred gateway dispatch failed (${preferredMessage}); falling back to dispatchToAgent`,
-      );
-      return await this.dispatchViaLegacyApi(agentId, taskId, contextId, userMessage);
-    }
-  }
 
   private rememberTaskContext(taskId: string, contextId: string): void {
     if (this.taskContextByTaskId.has(taskId)) {
@@ -572,33 +547,6 @@ export class OpenClawAgentExecutor implements AgentExecutor {
     }
   }
 
-  private async dispatchViaLegacyApi(
-    agentId: string,
-    taskId: string,
-    contextId: string,
-    userMessage: unknown,
-  ): Promise<string> {
-    if (!this.api.dispatchToAgent) {
-      throw new Error("dispatchToAgent is unavailable");
-    }
-
-    const dispatchResult = await withTimeout(
-      this.api.dispatchToAgent(agentId, {
-        type: "a2a.inbound",
-        taskId,
-        contextId,
-        message: userMessage,
-      }),
-      AGENT_RESPONSE_TIMEOUT_MS,
-      "dispatchToAgent timed out",
-    );
-
-    if (!dispatchResult.accepted) {
-      throw new Error(dispatchResult.error || "Agent rejected inbound A2A request");
-    }
-
-    return dispatchResult.response || "Request processed";
-  }
 
   private async dispatchViaGatewayRpc(agentId: string, userMessage: unknown): Promise<string> {
     const messageText = extractInboundMessageText(userMessage);

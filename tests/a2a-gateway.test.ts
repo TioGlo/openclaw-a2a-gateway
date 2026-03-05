@@ -4,13 +4,12 @@ import { describe, it } from "node:test";
 import plugin from "../index.js";
 import { buildAgentCard } from "../src/agent-card.js";
 import { OpenClawAgentExecutor } from "../src/executor.js";
-import type { GatewayConfig, OpenClawPluginApi } from "../src/types.js";
+import type { GatewayConfig } from "../src/types.js";
 
 interface Service {
   id: string;
-  start: () => Promise<void> | void;
-  stop: () => Promise<void> | void;
-  __app?: unknown;
+  start: (...args: any[]) => Promise<void> | void;
+  stop: (...args: any[]) => Promise<void> | void;
 }
 
 interface GatewayMethodResult {
@@ -19,42 +18,49 @@ interface GatewayMethodResult {
 }
 
 interface Harness {
-  methods: Map<string, (args: { params?: Record<string, unknown>; respond: (ok: boolean, data: unknown) => void }) => void>;
+  methods: Map<string, (args: any) => void>;
   service: Service;
-  dispatchCalls: Array<{ agentId: string; event: unknown }>;
 }
 
 function createHarness(config: Record<string, unknown>): Harness {
   let service: Service | null = null;
-  const methods = new Map<string, (args: { params?: Record<string, unknown>; respond: (ok: boolean, data: unknown) => void }) => void>();
-  const dispatchCalls: Array<{ agentId: string; event: unknown }> = [];
+  const methods = new Map<string, (args: any) => void>();
 
   plugin.register({
+    // Minimal mock; cast to any because the official OpenClawPluginApi has many fields.
     pluginConfig: config,
+    config: {} as any,
+    runtime: {} as any,
     logger: {
       info: () => {},
       warn: () => {},
       error: () => {},
     },
     on: () => {},
-    registerGatewayMethod(name, handler) {
+    registerGatewayMethod(name: string, handler: any) {
       methods.set(name, handler);
     },
-    registerService(nextService) {
+    registerService(nextService: any) {
       service = nextService as Service;
     },
-    async dispatchToAgent(agentId, event) {
-      dispatchCalls.push({ agentId, event });
-      return { accepted: true, response: "Request processed" };
-    },
-  });
+    registerTool: () => {},
+    registerHook: () => {},
+    registerHttpRoute: () => {},
+    registerChannel: () => {},
+    registerCli: () => {},
+    registerProvider: () => {},
+    registerCommand: () => {},
+    resolvePath: (p: string) => p,
+    id: "a2a-gateway",
+    name: "A2A Gateway",
+    source: "test",
+  } as any);
 
   assert(service, "service should be registered");
 
   return {
     methods,
     service,
-    dispatchCalls,
   };
 }
 
@@ -63,7 +69,7 @@ function makeConfig(overrides: Record<string, unknown> = {}): Record<string, unk
     agentCard: {
       name: "Test Agent",
       description: "test card",
-      url: "http://127.0.0.1:18800/.well-known/agent.json",
+      url: "http://127.0.0.1:18800/a2a/jsonrpc",
       skills: [{ name: "chat" }],
     },
     server: {
@@ -93,8 +99,12 @@ async function invokeGatewayMethod(
     const timeout = setTimeout(() => reject(new Error(`timeout waiting for ${methodName}`)), 3000);
 
     method({
+      req: { method: "req", params, id: "1" },
       params,
-      respond: (ok, data) => {
+      client: null,
+      isWebchatConnect: () => false,
+      context: {} as any,
+      respond: (ok: boolean, data: unknown) => {
         clearTimeout(timeout);
         resolve({ ok, data });
       },
@@ -118,24 +128,15 @@ describe("a2a-gateway plugin", () => {
     assert.equal(capabilities.stateTransitionHistory, false);
   });
 
-  it("prefers gateway RPC dispatch over legacy bridge", async () => {
-    const dispatchCalls: Array<{ agentId: string; event: unknown }> = [];
-    const api: OpenClawPluginApi = {
+  it("dispatches inbound messages via gateway RPC", async () => {
+    const api = {
       config: { gateway: { port: 18789 } },
-      pluginConfig: {},
       logger: {
         info: () => {},
         warn: () => {},
         error: () => {},
       },
-      on: () => {},
-      registerGatewayMethod: () => {},
-      registerService: () => {},
-      async dispatchToAgent(agentId, event) {
-        dispatchCalls.push({ agentId, event });
-        return { accepted: true, response: "Legacy response" };
-      },
-    };
+    } as any;
 
     class MockGatewaySocket {
       readyState = 0;
@@ -241,7 +242,8 @@ describe("a2a-gateway plugin", () => {
         } as any
       );
 
-      assert.equal(dispatchCalls.length, 0);
+      // No legacy dispatch path is used; gateway RPC is the only dispatch mechanism.
+      assert.equal(true, true);
       assert.equal(finishedCalled, true);
 
       const finalTask = published[published.length - 1] as Record<string, unknown>;
@@ -254,24 +256,15 @@ describe("a2a-gateway plugin", () => {
     }
   });
 
-  it("falls back to legacy bridge and publishes completed task when gateway path is unavailable", async () => {
-    const dispatchCalls: Array<{ agentId: string; event: unknown }> = [];
-    const api: OpenClawPluginApi = {
+  it("publishes fallback response when gateway RPC is unavailable", async () => {
+    const api = {
       config: { gateway: { port: 18789 } },
-      pluginConfig: {},
       logger: {
         info: () => {},
         warn: () => {},
         error: () => {},
       },
-      on: () => {},
-      registerGatewayMethod: () => {},
-      registerService: () => {},
-      async dispatchToAgent(agentId, event) {
-        dispatchCalls.push({ agentId, event });
-        return { accepted: true, response: "Request processed" };
-      },
-    };
+    } as any;
 
     const originalWebSocket = (globalThis as any).WebSocket;
     (globalThis as any).WebSocket = undefined;
@@ -302,35 +295,35 @@ describe("a2a-gateway plugin", () => {
         } as any
       );
 
-      assert.equal(dispatchCalls.length, 1);
-      assert.equal(dispatchCalls[0].agentId, "writer-agent");
+      // No legacy dispatch path.
+      assert.equal(true, true);
       assert.equal(finishedCalled, true);
 
       const finalTask = published[published.length - 1] as Record<string, unknown>;
       assert.equal(finalTask.kind, "task");
       const status = finalTask.status as Record<string, unknown>;
       assert.equal(status.state, "completed");
+
+      const message = status.message as Record<string, unknown>;
+      const parts = message.parts as Array<Record<string, unknown>>;
+      assert.equal(
+        parts[0].text,
+        "Request accepted (no agent dispatch available)",
+      );
     } finally {
       (globalThis as any).WebSocket = originalWebSocket;
     }
   });
 
   it("cancelTask uses tracked task contextId and does not fabricate it", async () => {
-    const api: OpenClawPluginApi = {
+    const api = {
       config: { gateway: { port: 18789 } },
-      pluginConfig: {},
       logger: {
         info: () => {},
         warn: () => {},
         error: () => {},
       },
-      on: () => {},
-      registerGatewayMethod: () => {},
-      registerService: () => {},
-      async dispatchToAgent() {
-        return { accepted: true, response: "Request processed" };
-      },
-    };
+    } as any;
 
     const executor = new OpenClawAgentExecutor(api, makeConfig() as unknown as GatewayConfig);
     (executor as any).taskContextByTaskId.set("task-1", "ctx-1");
@@ -360,7 +353,7 @@ describe("a2a-gateway plugin", () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
-      if (url === "http://mock-peer/.well-known/agent.json") {
+      if (url === "http://mock-peer/.well-known/agent-card.json" || url === "http://mock-peer/.well-known/agent.json") {
         return new Response(
           JSON.stringify({
             protocolVersion: "0.3.0",
@@ -405,7 +398,7 @@ describe("a2a-gateway plugin", () => {
           peers: [
             {
               name: "peer-1",
-              agentCardUrl: "http://mock-peer/.well-known/agent.json",
+              agentCardUrl: "http://mock-peer/.well-known/agent-card.json",
             },
           ],
         })
