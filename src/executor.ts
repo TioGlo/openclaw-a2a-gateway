@@ -915,16 +915,67 @@ export class OpenClawAgentExecutor implements AgentExecutor {
     contextId: string,
   ): Promise<AgentResponse> {
     const messageText = extractInboundMessageText(userMessage);
+
+    // Prefer the plugin runtime's subagent API for internal gateway dispatch.
+    // This dispatches through the plugin's built-in gateway context with
+    // operator.admin scope, avoiding the need for a separate WebSocket
+    // connection that requires device pairing and explicit scope grants.
+    const subagent = (this.api as Record<string, unknown>).runtime
+      ? ((this.api as Record<string, unknown>).runtime as Record<string, unknown>)?.subagent as {
+          run: (params: { sessionKey: string; message: string; deliver?: boolean; idempotencyKey?: string }) => Promise<{ runId: string }>;
+          waitForRun: (params: { runId: string; timeoutMs?: number }) => Promise<{ status: string; error?: string }>;
+          getSessionMessages: (params: { sessionKey: string; limit?: number }) => Promise<{ messages: unknown[] }>;
+        } | undefined
+      : undefined;
+
+    if (subagent) {
+      const sessionKey = `agent:${agentId}:a2a:${contextId}`;
+
+      const { runId } = await subagent.run({
+        sessionKey,
+        message: messageText,
+        deliver: false,
+        idempotencyKey: uuidv4(),
+      });
+
+      const waitResult = await subagent.waitForRun({
+        runId,
+        timeoutMs: this.agentResponseTimeoutMs,
+      });
+
+      if (waitResult.status === "error") {
+        throw new Error(waitResult.error || "Agent run failed");
+      }
+      if (waitResult.status === "timeout") {
+        throw new Error("Agent run timed out");
+      }
+
+      // Retrieve the latest assistant reply from session history
+      const { messages } = await subagent.getSessionMessages({
+        sessionKey,
+        limit: 50,
+      });
+
+      if (Array.isArray(messages)) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i] as Record<string, unknown> | undefined;
+          if (msg && msg.role === "assistant" && typeof msg.content === "string" && msg.content) {
+            return { text: msg.content, mediaUrls: [] };
+          }
+        }
+      }
+
+      throw new Error("No assistant response text returned by gateway");
+    }
+
+    // Fallback: original WebSocket-based dispatch (for older OpenClaw versions
+    // without runtime.subagent support)
     const gatewayConfig = this.resolveGatewayRuntimeConfig();
     const gateway = new GatewayRpcConnection(gatewayConfig);
 
     await gateway.connect();
 
     try {
-      // Derive a deterministic session key from A2A contextId for:
-      // 1. Session reuse across messages in the same A2A context (conversation continuity)
-      // 2. Isolation between different A2A contexts (no cross-contamination)
-      // The gateway `agent` RPC auto-creates the session if it doesn't exist.
       const sessionKey = `agent:${agentId}:a2a:${contextId}`;
 
       const runId = uuidv4();
@@ -954,8 +1005,6 @@ export class OpenClawAgentExecutor implements AgentExecutor {
         return agentResponse;
       }
 
-      // sessionKey is always available (deterministic from contextId),
-      // so we can always try to retrieve the latest assistant reply from history.
       const historyPayload = await gateway.request(
         "chat.history",
         { sessionKey, limit: 50 },
