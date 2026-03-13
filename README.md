@@ -1,8 +1,12 @@
-# 🦞OpenClaw A2A Gateway Plugin
+# 🦞OpenClaw A2A Gateway Plugin (Clawmune Fork)
 
 **English** | [简体中文](README_CN.md)
 
 An [OpenClaw](https://github.com/openclaw/openclaw) plugin that implements the [A2A (Agent-to-Agent) v0.3.0 protocol](https://github.com/google/A2A), enabling OpenClaw agents to communicate with each other across different servers.
+
+> **This is the [Clawmune](https://github.com/TioGlo/clawmune) fork.** It includes a fix for the `missing scope: operator.write` error that occurs in the upstream plugin when the A2A executor tries to dispatch inbound messages to the gateway via its own WebSocket connection. This fork uses OpenClaw's plugin runtime subagent API (`runtime.subagent`) for internal dispatch instead, which has the correct scope. See [Scope Fix](#scope-fix) below.
+>
+> Upstream repo: [win4r/openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)
 
 ## What It Does
 
@@ -42,7 +46,7 @@ The plugin ships with sensible defaults — you can install and load it **withou
 # Clone
 mkdir -p ~/.openclaw/workspace/plugins
 cd ~/.openclaw/workspace/plugins
-git clone https://github.com/win4r/openclaw-a2a-gateway.git a2a-gateway
+git clone https://github.com/TioGlo/openclaw-a2a-gateway.git a2a-gateway
 cd a2a-gateway
 npm install --production
 
@@ -69,7 +73,7 @@ If you prefer manual control or need to keep existing plugins in your config:
 # Into your workspace plugins directory
 mkdir -p ~/.openclaw/workspace/plugins
 cd ~/.openclaw/workspace/plugins
-git clone https://github.com/win4r/openclaw-a2a-gateway.git a2a-gateway
+git clone https://github.com/TioGlo/openclaw-a2a-gateway.git a2a-gateway
 cd a2a-gateway
 npm install --production
 ```
@@ -437,6 +441,30 @@ node <PLUGIN_PATH>/skill/scripts/a2a-send.mjs \
 | `/a2a/rest` | POST | A2A REST transport |
 | `/a2a/metrics` | GET | JSON telemetry snapshot (if enabled) |
 
+## Scope Fix
+
+This fork fixes a critical bug in the upstream plugin's agent dispatch mechanism.
+
+### The Problem
+
+The upstream plugin creates its own WebSocket connection to the local OpenClaw gateway to dispatch inbound A2A messages to the agent. This connection requests `operator.write` scope (needed for the `agent` RPC method). However, new WebSocket connections go through OpenClaw's device pairing flow, which only grants `operator.pairing` scope initially. The gateway then rejects the `agent` RPC call with:
+
+```
+errorCode=INVALID_REQUEST errorMessage=missing scope: operator.write
+```
+
+### The Fix
+
+OpenClaw's plugin system provides a `runtime.subagent` API that dispatches agent runs internally through the plugin's built-in gateway context with `operator.admin` scope. No separate WebSocket connection, no device pairing, no scope issues.
+
+The fix modifies `src/executor.ts` → `dispatchViaGatewayRpc()` to:
+
+1. Check if `runtime.subagent` is available on the plugin API
+2. If yes, use `subagent.run()` → `subagent.waitForRun()` → `subagent.getSessionMessages()` for dispatch
+3. If no (older OpenClaw versions without `runtime.subagent`), fall back to the original WebSocket-based dispatch
+
+The fix also reuses the existing `extractLatestAssistantReply()` function for response parsing in the subagent path, ensuring all OpenClaw message formats are handled correctly.
+
 ## Troubleshooting
 
 ### "Request accepted (no agent dispatch available)"
@@ -600,12 +628,4 @@ MIT
 
 ---
 
-## Buy Me a Coffee
-
-[!["Buy Me A Coffee"](https://storage.ko-fi.com/cdn/kofi2.png?v=3)](https://ko-fi.com/aila)
-
-## My WeChat Group and My WeChat QR Code
-
-<img src="https://github.com/win4r/AISuperDomain/assets/42172631/d6dcfd1a-60fa-4b6f-9d5e-1482150a7d95" width="186" height="300">
-<img src="https://github.com/win4r/AISuperDomain/assets/42172631/7568cf78-c8ba-4182-aa96-d524d903f2bc" width="214.8" height="291">
-<img src="https://github.com/win4r/AISuperDomain/assets/42172631/fefe535c-8153-4046-bfb4-e65eacbf7a33" width="207" height="281">
+*Forked from [win4r/openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway). Original work by [win4r](https://github.com/win4r).*
