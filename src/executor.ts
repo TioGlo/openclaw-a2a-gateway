@@ -950,19 +950,19 @@ export class OpenClawAgentExecutor implements AgentExecutor {
         throw new Error("Agent run timed out");
       }
 
-      // Retrieve the latest assistant reply from session history
-      const { messages } = await subagent.getSessionMessages({
+      // Retrieve the latest assistant reply from session history.
+      // Wrap in the same shape that extractLatestAssistantReply expects
+      // ({ messages: [...] }) so we reuse the existing extraction logic
+      // which handles all OpenClaw message formats (content arrays, text
+      // fragments, nested payloads, etc.).
+      const sessionResult = await subagent.getSessionMessages({
         sessionKey,
         limit: 50,
       });
 
-      if (Array.isArray(messages)) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const msg = messages[i] as Record<string, unknown> | undefined;
-          if (msg && msg.role === "assistant" && typeof msg.content === "string" && msg.content) {
-            return { text: msg.content, mediaUrls: [] };
-          }
-        }
+      const historyText = extractLatestAssistantReply(sessionResult);
+      if (historyText) {
+        return { text: historyText, mediaUrls: [] };
       }
 
       throw new Error("No assistant response text returned by gateway");
